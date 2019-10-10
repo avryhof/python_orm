@@ -1,10 +1,9 @@
 import sqlite3
 
-from past.builtins import unicode
 from psycopg2.extras import DictCursor
 
-import settings
-from orm.base_class import BaseClass
+from . import settings
+from .base_class import BaseClass
 
 
 class BaseDBClass(BaseClass):
@@ -38,8 +37,12 @@ class BaseDBClass(BaseClass):
             self.database_class = "sqlite"
         elif hasattr(self.db_client, "_psycopg"):
             self.database_class = "psql"
+        elif hasattr(self.db_client, "__name__"):
+            self.database_class = self.db_client.__name__
+            if "mssql" in self.database_class:
+                self.database_class = "mssql"
         else:
-            print(dir(self.db_client))
+            print((dir(self.db_client)))
 
         server = kwargs.get("server", settings.DATABASE.get("HOST"))
         user = kwargs.get("user", settings.DATABASE.get("USER"))
@@ -59,12 +62,16 @@ class BaseDBClass(BaseClass):
             self.conn = self.db_client.connect(self.dsn, cursor_factory=DictCursor)
             self.cursor = self.conn.cursor(cursor_factory=DictCursor)
 
+        elif self.database_class == "mssql":
+            self.conn = self.db_client.connect(server, user, password, db_name)
+            self.cursor = self.conn.cursor(as_dict=True)
+
         else:
             self.conn = self.db_client.connect(server, user, password, db_name)
             self.cursor = self.conn.cursor(as_dict=True)
 
         self.standard_cursor = self.conn.cursor()
-        self.debug_queries = kwargs.pop("debug_queries", False)
+        self.debug_queries = kwargs.get("debug", False)
 
         super(BaseDBClass, self).__init__(**kwargs)
 
@@ -74,8 +81,9 @@ class BaseDBClass(BaseClass):
         super(BaseDBClass, self).__exit__(exc_type, exc_val, exc_tb)
 
     def _param_string(self):
-        if self.database_class == "psql":
+        if self.database_class in ["psql", "mssql"]:
             self.param_string = "%" + "s"
+
         else:
             self.param_string = "?"
 
@@ -84,7 +92,7 @@ class BaseDBClass(BaseClass):
     def _encap_string(self):
         if "mssql" in self.database_class.lower():
             self.encap_left = "["
-            self.encap_right = "["
+            self.encap_right = "]"
         elif "mysql" in self.database_class.lower():
             self.encap_left = "`"
             self.encap_right = "`"
@@ -95,7 +103,7 @@ class BaseDBClass(BaseClass):
     def encap_string(self, value):
         self._encap_string()
 
-        if isinstance(value, (str, unicode)):
+        if isinstance(value, str):
             if value[0] != self.encap_left:
                 value = "%s%s" % (self.encap_left, value)
 
@@ -131,6 +139,9 @@ class BaseDBClass(BaseClass):
     def _db_query(self, query, real_values=False):
         result = None
 
+        if self.database_class == "mssql":
+            real_values = tuple(real_values)
+
         if self.debug_queries:
             self._debug_handler(query)
 
@@ -143,7 +154,8 @@ class BaseDBClass(BaseClass):
             else:
                 result = self.cursor.execute(query, real_values)
 
-            self.conn.commit()
+            if "INSERT" in query.upper() or "UPDATE" in query.upper() or "DELETE" in query.upper():
+                self.conn.commit()
 
         except self.db_client.OperationalError as e:
             query_type = query.split(" ")[0]

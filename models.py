@@ -1,9 +1,9 @@
 import json
 import re
 
-from orm.database import BaseDBClass
-from orm.exceptions import FailedToBind, ObjectDoesNotExist, MultipleObjectsReturned
-from orm.helpers import get_val
+from .database import BaseDBClass
+from .exceptions import FailedToBind, ObjectDoesNotExist, MultipleObjectsReturned
+from .helpers import get_val
 
 
 class Field:
@@ -21,7 +21,7 @@ class Field:
 
     value = None
     db_table = None
-    real_field = None
+    db_field = None
     field_type = ""
     max_length = None
     null_field = False
@@ -30,7 +30,7 @@ class Field:
     primary_key = False
 
     def __init__(self, **kwargs):
-        self.real_field = kwargs.get("db_field", None)
+        self.db_field = kwargs.get("db_field", None)
         self.db_table = kwargs.get("db_table", None)
 
         self.field_type = kwargs.get("field_type", None)
@@ -41,7 +41,7 @@ class Field:
         self.primary_key = kwargs.get("primary_key", False)
 
     def __str__(self):
-        retn = "%s.%s" % (self.db_table, self.real_field)
+        retn = "%s.%s" % (self.db_table, self.db_field)
 
         if self.value:
             retn = self.value
@@ -208,7 +208,7 @@ class QueryObject:
         if items:
             self.container = items
 
-        for k, v in self.container.items():
+        for k, v in list(self.container.items()):
             setattr(self, k, v)
 
     def __str__(self):
@@ -220,7 +220,7 @@ class QueryObject:
         return self.container.get(name)
 
     def update(self, **kwargs):
-        for field, value in kwargs.items():
+        for field, value in list(kwargs.items()):
             if field in self.container:
                 self.container[field] = value
 
@@ -278,6 +278,8 @@ class Objects(BaseDBClass):
     columns = ["*"]
     column_lookup = dict()
     column_lookup_reverse = dict()
+
+    where_values = []
 
     table_definition = []
     db_values = None
@@ -372,9 +374,7 @@ class Objects(BaseDBClass):
             if self.database_class == "sqlite":
                 self.table_definition.append("%s BIGINT(20) NOT NULL PRIMARY KEY" % self.encap_string(pk_name))
             elif self.database_class == "psql":
-                self.table_definition.append(
-                    "%s SERIAL PRIMARY KEY" % (pk_name)
-                )
+                self.table_definition.append("%s SERIAL PRIMARY KEY" % (pk_name))
             else:
                 self.table_definition.append("%s BIGINT(20) NOT NULL AUTO_INCREMENT" % self.encap_string(pk_name))
 
@@ -383,6 +383,10 @@ class Objects(BaseDBClass):
 
         if not self.table or not self.model_instance:
             raise FailedToBind("You must pass in a table and the model instance.")
+
+        if self.debug:
+            self._debug_handler(self.column_lookup, pretty=True)
+            self._debug_handler(self.column_lookup_reverse, pretty=True)
 
     def _init_join(self):
         join_strings = []
@@ -449,10 +453,30 @@ class Objects(BaseDBClass):
 
         if self.database_class == "sqlite":
             has_length = False
-            if data_type in ("INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "UNSIGNED BIG INT", "INT2", "INT8"):
+            if data_type in (
+                "INT",
+                "INTEGER",
+                "TINYINT",
+                "SMALLINT",
+                "MEDIUMINT",
+                "BIGINT",
+                "UNSIGNED BIG INT",
+                "INT2",
+                "INT8",
+            ):
                 affinity = "INTEGER"
 
-            elif data_type in ("CHARACTER" ,"VARCHAR", "VARYING CHARACTER", "CHARACTER VARYING", "NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB"):
+            elif data_type in (
+                "CHARACTER",
+                "VARCHAR",
+                "VARYING CHARACTER",
+                "CHARACTER VARYING",
+                "NCHAR",
+                "NATIVE CHARACTER",
+                "NVARCHAR",
+                "TEXT",
+                "CLOB",
+            ):
                 affinity = "TEXT"
 
             elif data_type in ("REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT"):
@@ -462,10 +486,28 @@ class Objects(BaseDBClass):
                 affinity = "NUMERIC"
 
         if self.database_class == "psql":
-            if data_type in ("INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "UNSIGNED BIG INT", "INT2", "INT8"):
+            if data_type in (
+                "INT",
+                "INTEGER",
+                "TINYINT",
+                "SMALLINT",
+                "MEDIUMINT",
+                "BIGINT",
+                "UNSIGNED BIG INT",
+                "INT2",
+                "INT8",
+            ):
                 has_length = False
 
-            elif data_type in ("CHARACTER" ,"VARCHAR", "VARYING CHARACTER", "CHARACTER VARYING", "NCHAR", "NATIVE CHARACTER", "NVARCHAR",):
+            elif data_type in (
+                "CHARACTER",
+                "VARCHAR",
+                "VARYING CHARACTER",
+                "CHARACTER VARYING",
+                "NCHAR",
+                "NATIVE CHARACTER",
+                "NVARCHAR",
+            ):
                 has_length = True
 
             elif data_type in ("TEXT", "CLOB", "BLOB"):
@@ -477,12 +519,16 @@ class Objects(BaseDBClass):
         wheres = []
 
         real_values = []
-        for k, v in kwargs.items():
+        for k, v in list(kwargs.items()):
             key_parts = k.split("__")
             key = key_parts[0]
             key_function = key_parts[1] if len(key_parts) > 1 else None
             key_operator = key_parts[2] if len(key_parts) > 2 else "and"
-            real_values.append(v)
+
+            if key_function in ["iexact", "icontains", "istartswith", "iendswith"]:
+                self.where_values.append(v.upper())
+            else:
+                self.where_values.append(v)
 
             # If a Field is defined on the model, we translate it.
             key = self.column_lookup.get(key, key)
@@ -500,7 +546,7 @@ class Objects(BaseDBClass):
             elif key_function == "istartswith":
                 where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
             elif key_function == "iendswith":
-                where_append = "UPPER(RIGHT(%s, %i)) = " % (str(key), len(str(v)), self._param_string())
+                where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
             elif key_function == "not_like":
                 where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
             elif key_function == "isnull":
@@ -572,7 +618,7 @@ class Objects(BaseDBClass):
         insert_fields = []
         real_insert_values = []
         insert_values = []
-        for field, value in kwargs.items():
+        for field, value in list(kwargs.items()):
             real_column = self.column_lookup.get(field, field)
             insert_fields.append(self.encap_string(real_column))
             real_insert_values.append(value)
@@ -593,9 +639,9 @@ class Objects(BaseDBClass):
 
         update_values = []
         real_insert_values = []
-        for field, value in fields.items():
+        for field, value in list(fields.items()):
             real_column = self.column_lookup.get(field, field)
-            update_values.append("%s=%s" % (self.encap_string(real_column)), self._param_string())
+            update_values.append("%s=%s" % (self.encap_string(real_column), self._param_string()))
             real_insert_values.append(value)
 
         query_parts.append(",".join(update_values))
@@ -631,18 +677,17 @@ class Objects(BaseDBClass):
         select_all = kwargs.pop("select_all", False)
 
         filter_result = []
-        where_values = False
+        self.where_values = []
 
         if not select_all:
             where = self._process_filters(**kwargs)
             query = self._build_query(where=where, limit=result_limit, order_by=order_by)
-            where_values = list(kwargs.values())
 
         else:
             query = self._build_query()
 
         try:
-            self._db_query(query, where_values)
+            self._db_query(query, self.where_values)
 
         except:
             self._debug_handler(query)

@@ -1,12 +1,10 @@
+import datetime
 import logging
 import math
 import pprint
 import sys
 
-from orm.aware_datetime import aware_datetime
-
 logger = logging.getLogger(__name__)
-datetime = aware_datetime()
 
 
 class BaseClass:
@@ -21,19 +19,20 @@ class BaseClass:
         if pretty:
             message = pprint.pformat(message)
 
-        log_message = "%s: %s\n" % (datetime.now().isoformat()[0:19], message)
+        log_message = "%s: %s\n" % (datetime.datetime.now().isoformat()[0:19], message)
 
         if self.debug:
             logger.info(log_message)
+            print(log_message)
 
     def _timer(self):
         if not self.init_time:
-            self.init_time = datetime.now()
+            self.init_time = datetime.datetime.now()
             self._debug_handler("Class %s initiated." % self.__class__.__name__)
         else:
             self._debug_handler("Class %s completed." % self.__class__.__name__)
 
-            complete_time = datetime.now()
+            complete_time = datetime.datetime.now()
             command_total_seconds = (complete_time - self.init_time).total_seconds()
             command_minutes = math.floor(command_total_seconds / 60)
             command_seconds = command_total_seconds - (command_minutes * 60)

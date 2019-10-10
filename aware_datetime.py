@@ -10,7 +10,7 @@ class aware_datetime:
 
     def __init__(self, *args, **kwargs):
         self.timezone = kwargs.pop("timezone", strftime("%z", gmtime()))
-        if len(args) > 0 or len(kwargs.items()) > 0:
+        if len(args) > 0 or len(list(kwargs.items())) > 0:
             self.value = datetime.datetime(*args, **kwargs)
         else:
             self.value = datetime.datetime.now()
