@@ -1,0 +1,21 @@
+{% extends "admin/custom-admin-page.html" %}
+{% load i18n static %}
+{% block breadcrumbs %}
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item active" aria-current="page">
+                <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+            </li>
+            {% if app.app_label %}
+                <li class="breadcrumb-item">
+                    {{ app.app_label }}
+                </li>
+            {% endif %}
+        </ol>
+    </nav>
+{% endblock %}
+
+{% block custom_content %}
+    <h1>{{ app.app_label|title }} administration</h1>
+    {% include "admin/_module.html" %}
+{% endblock %}

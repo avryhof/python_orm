@@ -31,7 +31,13 @@ class BaseDBClass(BaseClass):
     encap_right = None
 
     def __init__(self, **kwargs):
-        self.db_client = kwargs.get("db_client", settings.DATABASE.get("ENGINE"))
+        super(BaseDBClass, self).__init__(**kwargs)
+
+        self._debug_handler("Initialize Database Class")
+
+        default_database = kwargs.get("database", settings.DATABASE)
+
+        self.db_client = kwargs.get("db_client", default_database.get("ENGINE"))
 
         if hasattr(self.db_client, "sqlite_version"):
             self.database_class = "sqlite"
@@ -42,13 +48,18 @@ class BaseDBClass(BaseClass):
             if "mssql" in self.database_class:
                 self.database_class = "mssql"
         else:
-            print((dir(self.db_client)))
+            self._debug_handler("Could not detect database class.")
+            self._debug_handler((dir(self.db_client)))
 
-        server = kwargs.get("server", settings.DATABASE.get("HOST"))
-        user = kwargs.get("user", settings.DATABASE.get("USER"))
-        password = kwargs.get("password", settings.DATABASE.get("PASSWORD"))
-        db_file = kwargs.get("file", settings.DATABASE.get("FILE"))
-        db_name = kwargs.get("name", settings.DATABASE.get("NAME"))
+        self._debug_handler("DATABASE CLASS: %s" % self.database_class)
+
+        server = kwargs.get("server", default_database.get("HOST"))
+        user = kwargs.get("user", default_database.get("USER"))
+        password = kwargs.get("password", default_database.get("PASSWORD"))
+        db_file = kwargs.get("file", default_database.get("FILE"))
+        db_name = kwargs.get("name", default_database.get("NAME"))
+
+        self._debug_handler("Connecting to %s -> %s as %s" % (server, db_name, user))
 
         self.database = db_name
 
@@ -72,8 +83,6 @@ class BaseDBClass(BaseClass):
 
         self.standard_cursor = self.conn.cursor()
         self.debug_queries = kwargs.get("debug", False)
-
-        super(BaseDBClass, self).__init__(**kwargs)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.conn.close()
@@ -130,9 +139,7 @@ class BaseDBClass(BaseClass):
             retn = self.cursor.fetchall()
 
         except self.db_client.OperationalError as e:
-            if self.debug_queries:
-                self._debug_handler(e)
-            pass
+            self._debug_handler(e)
 
         return retn
 
@@ -150,6 +157,7 @@ class BaseDBClass(BaseClass):
 
         try:
             if not real_values:
+                print(query)
                 result = self.cursor.execute(query)
             else:
                 result = self.cursor.execute(query, real_values)

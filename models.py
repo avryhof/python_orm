@@ -55,6 +55,9 @@ class IntegerField(Field):
         self.field_type = kwargs.get("field_type", "INTEGER")
         self.max_length = kwargs.get("max_length", 11)
 
+    def __int__(self):
+        return self.value
+
 
 class AutoField(IntegerField):
     def __init__(self, **kwargs):
@@ -66,6 +69,13 @@ class BooleanField(IntegerField):
     def __init__(self, **kwargs):
         super(BooleanField, self).__init__(**kwargs)
         self.max_length = kwargs.get("max_length", 1)
+
+    def __bool__(self):
+        retn = False
+        if self.value:
+            retn = True
+
+        return retn
 
 
 class CharField(Field):
@@ -98,11 +108,18 @@ class DecimalField(Field):
         self.decimal_places = kwargs.get("decimal_places", 6)
         self.max_length = "%i, %i" % (self.max_digits, self.decimal_places)
 
+    def __float__(self):
+
+        return self.value
+
 
 class FloatField(Field):
     def __init__(self, **kwargs):
         super(FloatField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "FLOAT")
+
+    def __float__(self):
+        return self.value
 
 
 class TextField(Field):
@@ -148,6 +165,7 @@ class Model:
     The first table in the db_table list is special, and if a db_table is not specified for a Field, the Object
     mapper will try to map the field to that database table.
     """
+    fields = []
 
     objects = None
     class_slug = None
@@ -163,6 +181,12 @@ class Model:
         self.class_slug = self._db_slug(self.class_name)
         self.db_table = self.class_slug
 
+        for field in dir(self):
+            field_attr = getattr(self, field, False)
+
+            if isinstance(field_attr, Field):
+                self.fields.append(field)
+
         meta = getattr(self, "Meta", None)
 
         if meta:
@@ -171,6 +195,9 @@ class Model:
 
             self.joined = getattr(meta, "joined", False)
             self.joined_on = getattr(meta, "join_on", "")
+
+            if hasattr(meta, "database"):
+                kwargs["database"] = getattr(meta, "database")
 
         self.objects = Objects(
             table=self.db_table, model_instance=self, joined=self.joined, joined_on=self.joined_on, **kwargs
@@ -285,6 +312,7 @@ class Objects(BaseDBClass):
     db_values = None
 
     def __init__(self, **kwargs):
+        super(Objects, self).__init__(**kwargs)
         self.table = kwargs.pop("table")
         self.model_instance = kwargs.pop("model_instance", None)
 
@@ -292,8 +320,6 @@ class Objects(BaseDBClass):
         self.joined_on = kwargs.pop("joined_on", "")
 
         self.table_definition = []
-
-        super(Objects, self).__init__(**kwargs)
 
         defined_fields = []
         for field in dir(self.model_instance):
@@ -384,9 +410,9 @@ class Objects(BaseDBClass):
         if not self.table or not self.model_instance:
             raise FailedToBind("You must pass in a table and the model instance.")
 
-        if self.debug:
-            self._debug_handler(self.column_lookup, pretty=True)
-            self._debug_handler(self.column_lookup_reverse, pretty=True)
+        # if self.debug:
+        #     self._debug_handler(self.column_lookup, pretty=True)
+        #     self._debug_handler(self.column_lookup_reverse, pretty=True)
 
     def _init_join(self):
         join_strings = []
@@ -396,7 +422,11 @@ class Objects(BaseDBClass):
             namespace_key = re.sub("[^a-z]", "", table_name.lower())
             self.table_namespaces.update({namespace_key: table_name})
             self.table_namespaces_lookup.update({table_name: namespace_key})
-            join_strings.append("%s.%s %s" % (self.database, table_name, namespace_key))
+            if self.database_class == "mssql":
+                join_strings.append("%s %s" % (table_name, namespace_key))
+            else:
+                join_strings.append("%s.%s %s" % (self.database, table_name, namespace_key))
+
             join_on = join_on.replace(table_name, namespace_key).replace(",", " AND ")
 
         join_string = ", ".join(join_strings)
@@ -525,9 +555,7 @@ class Objects(BaseDBClass):
             key_function = key_parts[1] if len(key_parts) > 1 else None
             key_operator = key_parts[2] if len(key_parts) > 2 else "and"
 
-            if key_function in ["iexact", "icontains", "istartswith", "iendswith"]:
-                self.where_values.append(v.upper())
-            else:
+            if key_function not in ["iexact", "icontains", "istartswith", "iendswith", "contains"]:
                 self.where_values.append(v)
 
             # If a Field is defined on the model, we translate it.
@@ -535,18 +563,23 @@ class Objects(BaseDBClass):
 
             if key_function == "iexact":
                 where_append = "UPPER(%s) = %s" % (str(key), self._param_string())
+                self.where_values.append(v.upper())
             elif key_function == "icontains":
-                where_append = "UPPER(%s) LIKE %%%s%%" % (str(key), self._param_string())
+                where_append = "UPPER(%s) LIKE %s" % (str(key), self._param_string())
+                self.where_values.append("%" + v.upper() + "%")
             elif key_function == "contains":
-                where_append = "%s LIKE %%%s%%" % (str(key), self._param_string())
+                where_append = "%s LIKE %s" % (str(key), self._param_string())
+                self.where_values.append("%" + v + "%")
             elif key_function == "startswith":  # Seems *slightly* faster than LIKE '...%'
                 where_append = "LEFT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
             elif key_function == "endswith":
                 where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
             elif key_function == "istartswith":
                 where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                self.where_values.append(v.upper())
             elif key_function == "iendswith":
                 where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                self.where_values.append(v.upper())
             elif key_function == "not_like":
                 where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
             elif key_function == "isnull":
@@ -675,16 +708,24 @@ class Objects(BaseDBClass):
         result_limit = kwargs.pop("result_limit", False)
         order_by = kwargs.pop("order_by", False)
         select_all = kwargs.pop("select_all", False)
+        columns = kwargs.pop("columns", False)
+
+        if not columns:
+            columns = self.columns
+
+        else:
+            print(self.columns)
+            print(columns)
 
         filter_result = []
         self.where_values = []
 
         if not select_all:
             where = self._process_filters(**kwargs)
-            query = self._build_query(where=where, limit=result_limit, order_by=order_by)
+            query = self._build_query(columns=columns, where=where, limit=result_limit, order_by=order_by)
 
         else:
-            query = self._build_query()
+            query = self._build_query(columns=columns, limit=result_limit, order_by=order_by)
 
         try:
             self._db_query(query, self.where_values)
