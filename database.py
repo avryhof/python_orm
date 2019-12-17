@@ -157,7 +157,6 @@ class BaseDBClass(BaseClass):
 
         try:
             if not real_values:
-                print(query)
                 result = self.cursor.execute(query)
             else:
                 result = self.cursor.execute(query, real_values)
