@@ -311,6 +311,8 @@ class Objects(BaseDBClass):
     table_definition = []
     db_values = None
 
+    parametrized = True
+
     def __init__(self, **kwargs):
         super(Objects, self).__init__(**kwargs)
         self.table = kwargs.pop("table")
@@ -562,43 +564,110 @@ class Objects(BaseDBClass):
             key = self.column_lookup.get(key, key)
 
             if key_function == "iexact":
-                where_append = "UPPER(%s) = %s" % (str(key), self._param_string())
-                self.where_values.append(v.upper())
+                appendval = v.upper()
+                if not self.parametrized:
+                    where_append = "UPPER(%s) = '%s'" % (str(key), appendval)
+                else:
+                    where_append = "UPPER(%s) = %s" % (str(key), self._param_string())
+                    self.where_values.append(appendval)
             elif key_function == "icontains":
-                where_append = "UPPER(%s) LIKE %s" % (str(key), self._param_string())
-                self.where_values.append("%" + v.upper() + "%")
+                appendval = "%" + v.upper() + "%"
+                if not self.parametrized:
+                    where_append = "UPPER(%s) LIKE '%s'" % (str(key), appendval)
+                else:
+                    where_append = "UPPER(%s) LIKE %s" % (str(key), self._param_string())
+                    self.where_values.append(appendval)
             elif key_function == "contains":
-                where_append = "%s LIKE %s" % (str(key), self._param_string())
-                self.where_values.append("%" + v + "%")
+                appendval = "%" + v + "%"
+                if not self.parametrized:
+                    where_append = "%s LIKE '%s'" % (str(key), appendval)
+                else:
+                    where_append = "%s LIKE %s" % (str(key), self._param_string())
+                    self.where_values.append(appendval)
             elif key_function == "startswith":  # Seems *slightly* faster than LIKE '...%'
-                where_append = "LEFT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
+                if not self.parametrized:
+                    where_append = "LEFT(%s, %i) = '%s'" % (str(key), len(str(v)), v)
+                else:
+                    where_append = "LEFT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
             elif key_function == "endswith":
-                where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
+                if not self.parametrized:
+                    where_append = "RIGHT(%s, %i) = '%s'" % (str(key), len(str(v)), self._param_string())
+                else:
+                    where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), v)
             elif key_function == "istartswith":
-                where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
-                self.where_values.append(v.upper())
+                appendval = v.upper()
+                if not self.parametrized:
+                    where_append = "UPPER(LEFT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
+                else:
+                    where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                    self.where_values.append(appendval)
             elif key_function == "iendswith":
-                where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
-                self.where_values.append(v.upper())
+                appendval = v.upper()
+                if not self.parametrized:
+                    where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
+                else:
+                    where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                    self.where_values.append(appendval)
             elif key_function == "not_like":
-                where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    where_append = "%s NOT LIKE '%s'" % (str(key), v)
+                else:
+                    where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
             elif key_function == "isnull":
                 comparison = "IS NOT" if not v else "IS"
                 where_append = "%s %s NULL" % (str(key), comparison)
             elif key_function == "lt":
-                where_append = "%s < %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, str):
+                        where_append = "%s < '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s < %s" % (str(key), v)
+                else:
+                    where_append = "%s < %s" % (str(key), self._param_string())
             elif key_function == "lte":
-                where_append = "%s <= %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, str):
+                        where_append = "%s <= '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s <= %s" % (str(key), v)
+                else:
+                    where_append = "%s <= %s" % (str(key), self._param_string())
             elif key_function == "gt":
-                where_append = "%s > %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, str):
+                        where_append = "%s > '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s > %s" % (str(key), v)
+                else:
+                    where_append = "%s > %s" % (str(key), self._param_string())
             elif key_function == "gte":
-                where_append = "%s >= %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, str):
+                        where_append = "%s >= '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s >= %s" % (str(key), v)
+                else:
+                    where_append = "%s >= %s" % (str(key), self._param_string())
             elif key_function == "in":
-                where_append = "%s IN %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, list):
+                        v_val = str(tuple(v))
+                    where_append = "%s IN %s" % (str(key), v_val)
+                else:
+                    where_append = "%s IN %s" % (str(key), self._param_string())
             elif key_function == "not_in":
-                where_append = "%s NOT IN %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    where_append = "%s NOT IN %s" % (str(key), v)
+                else:
+                    where_append = "%s NOT IN %s" % (str(key), self._param_string())
             else:
-                where_append = "%s = %s" % (str(key), self._param_string())
+                if not self.parametrized:
+                    if isinstance(v, str):
+                        where_append = "%s = '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s = %s" % (str(key), v)
+                else:
+                    where_append = "%s = %s" % (str(key), self._param_string())
 
             where_string = ""
 
@@ -709,6 +778,7 @@ class Objects(BaseDBClass):
         order_by = kwargs.pop("order_by", False)
         select_all = kwargs.pop("select_all", False)
         columns = kwargs.pop("columns", False)
+        self.parametrized = kwargs.pop("parametrized", True)
 
         if not columns:
             columns = self.columns
@@ -727,8 +797,15 @@ class Objects(BaseDBClass):
         else:
             query = self._build_query(columns=columns, limit=result_limit, order_by=order_by)
 
+        # self.debug = True
+        # self.debug_queries = True
+        # self.debug_stdout = True
+
         try:
-            self._db_query(query, self.where_values)
+            if not self.parametrized:
+                self._db_query(query)
+            else:
+                self._db_query(query, self.where_values)
 
         except:
             self._debug_handler(query)

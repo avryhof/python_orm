@@ -1,9 +1,12 @@
+import pprint
 import sqlite3
 
+import pyodbc
 from psycopg2.extras import DictCursor
 
 from . import settings
 from .base_class import BaseClass
+from .helpers import handle_datetimeoffset
 
 
 class BaseDBClass(BaseClass):
@@ -17,6 +20,11 @@ class BaseDBClass(BaseClass):
 
     database = None
     database_class = None
+
+    server = None
+    user = None
+    db_file = None
+    db_name = None
 
     dsn = None
     db_client = None
@@ -45,7 +53,7 @@ class BaseDBClass(BaseClass):
             self.database_class = "psql"
         elif hasattr(self.db_client, "__name__"):
             self.database_class = self.db_client.__name__
-            if "mssql" in self.database_class:
+            if "mssql" in self.database_class or "pyodbc" in self.database_class:
                 self.database_class = "mssql"
         else:
             self._debug_handler("Could not detect database class.")
@@ -53,36 +61,44 @@ class BaseDBClass(BaseClass):
 
         self._debug_handler("DATABASE CLASS: %s" % self.database_class)
 
-        server = kwargs.get("server", default_database.get("HOST"))
-        user = kwargs.get("user", default_database.get("USER"))
+        self.server = kwargs.get("server", default_database.get("HOST"))
+        self.user = kwargs.get("user", default_database.get("USER"))
         password = kwargs.get("password", default_database.get("PASSWORD"))
-        db_file = kwargs.get("file", default_database.get("FILE"))
-        db_name = kwargs.get("name", default_database.get("NAME"))
+        self.db_file = kwargs.get("file", default_database.get("FILE"))
+        self.db_name = kwargs.get("name", default_database.get("NAME"))
 
-        self._debug_handler("Connecting to %s -> %s as %s" % (server, db_name, user))
+        self._debug_handler("Connecting to %s -> %s as %s" % (self.server, self.db_name, self.user))
 
-        self.database = db_name
+        self.database = self.db_name
 
         if self.database_class == "sqlite":
-            self.conn = self.db_client.connect(db_file)
+            self.conn = self.db_client.connect(self.db_file)
             self.conn.row_factory = sqlite3.Row
             self.cursor = self.conn.cursor()
 
         elif self.database_class == "psql":
-            self.dsn = "dbname='%s' user='%s' host='%s' password='%s'" % (db_name, user, server, password)
+            self.dsn = "dbname='%s' user='%s' host='%s' password='%s'" % (
+                self.db_name, self.user, self.server, password)
             self.conn = self.db_client.connect(self.dsn, cursor_factory=DictCursor)
             self.cursor = self.conn.cursor(cursor_factory=DictCursor)
 
         elif self.database_class == "mssql":
-            self.conn = self.db_client.connect(server, user, password, db_name)
-            self.cursor = self.conn.cursor(as_dict=True)
+            self.conn = self.db_client.connect(
+                'DRIVER={ODBC Driver 17 for SQL Server};SERVER=%s;DATABASE=%s;UID=%s;PWD=%s'
+                % (self.server, self.db_name, self.user, password)
+            )
+            self.conn.add_output_converter(-155, handle_datetimeoffset)
+            self.cursor = self.conn.cursor()
 
         else:
-            self.conn = self.db_client.connect(server, user, password, db_name)
+            self.conn = self.db_client.connect(self.server, self.user, password, self.db_name)
             self.cursor = self.conn.cursor(as_dict=True)
 
         self.standard_cursor = self.conn.cursor()
         self.debug_queries = kwargs.get("debug", False)
+
+        if not self.conn or not self.cursor:
+            self._debug_handler("Failed connection.")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.conn.close()
@@ -90,7 +106,7 @@ class BaseDBClass(BaseClass):
         super(BaseDBClass, self).__exit__(exc_type, exc_val, exc_tb)
 
     def _param_string(self):
-        if self.database_class in ["psql", "mssql"]:
+        if self.database_class in ["psql"]:
             self.param_string = "%" + "s"
 
         else:
@@ -130,6 +146,11 @@ class BaseDBClass(BaseClass):
         except self.db_client.OperationalError:
             pass
 
+        if self.database_class in ["mssql", "pyodbc"]:
+            columns = [column[0] for column in self.cursor.description]
+            result = dict(zip(columns, retn))
+            retn = result
+
         return retn
 
     def _fetch_all(self):
@@ -141,13 +162,17 @@ class BaseDBClass(BaseClass):
         except self.db_client.OperationalError as e:
             self._debug_handler(e)
 
+        if self.database_class in ["mssql", "pyodbc"]:
+            columns = [column[0] for column in self.cursor.description]
+            results = []
+            for row in retn:
+                results.append(dict(zip(columns, row)))
+            retn = results
+
         return retn
 
     def _db_query(self, query, real_values=False):
         result = None
-
-        if self.database_class == "mssql":
-            real_values = tuple(real_values)
 
         if self.debug_queries:
             self._debug_handler(query)
@@ -161,7 +186,8 @@ class BaseDBClass(BaseClass):
             else:
                 result = self.cursor.execute(query, real_values)
 
-            if "INSERT" in query.upper() or "UPDATE" in query.upper() or "DELETE" in query.upper():
+            test_query = query.upper()
+            if test_query.startswith("INSERT") or test_query.startswith("UPDATE"):
                 self.conn.commit()
 
         except self.db_client.OperationalError as e:
