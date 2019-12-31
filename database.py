@@ -53,8 +53,10 @@ class BaseDBClass(BaseClass):
             self.database_class = "psql"
         elif hasattr(self.db_client, "__name__"):
             self.database_class = self.db_client.__name__
-            if "mssql" in self.database_class or "pyodbc" in self.database_class:
+            if "mssql" in self.database_class:
                 self.database_class = "mssql"
+            elif  "pyodbc" in self.database_class:
+                self.database_class = "pyodbc"
         else:
             self._debug_handler("Could not detect database class.")
             self._debug_handler((dir(self.db_client)))
@@ -83,6 +85,10 @@ class BaseDBClass(BaseClass):
             self.cursor = self.conn.cursor(cursor_factory=DictCursor)
 
         elif self.database_class == "mssql":
+            self.conn = self.db_client.connect(self.server, self.user, password, self.db_name)
+            self.cursor = self.conn.cursor(as_dict=True)
+
+        elif self.database_class == "pyodbc":
             self.conn = self.db_client.connect(
                 'DRIVER={ODBC Driver 17 for SQL Server};SERVER=%s;DATABASE=%s;UID=%s;PWD=%s'
                 % (self.server, self.db_name, self.user, password)
@@ -106,7 +112,7 @@ class BaseDBClass(BaseClass):
         super(BaseDBClass, self).__exit__(exc_type, exc_val, exc_tb)
 
     def _param_string(self):
-        if self.database_class in ["psql"]:
+        if self.database_class in ["psql", "mssql"]:
             self.param_string = "%" + "s"
 
         else:
@@ -146,7 +152,7 @@ class BaseDBClass(BaseClass):
         except self.db_client.OperationalError:
             pass
 
-        if self.database_class in ["mssql", "pyodbc"]:
+        if self.database_class in ["pyodbc"]:
             columns = [column[0] for column in self.cursor.description]
             result = dict(zip(columns, retn))
             retn = result
@@ -162,7 +168,7 @@ class BaseDBClass(BaseClass):
         except self.db_client.OperationalError as e:
             self._debug_handler(e)
 
-        if self.database_class in ["mssql", "pyodbc"]:
+        if self.database_class in ["pyodbc"]:
             columns = [column[0] for column in self.cursor.description]
             results = []
             for row in retn:

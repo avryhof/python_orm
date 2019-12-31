@@ -424,7 +424,7 @@ class Objects(BaseDBClass):
             namespace_key = re.sub("[^a-z]", "", table_name.lower())
             self.table_namespaces.update({namespace_key: table_name})
             self.table_namespaces_lookup.update({table_name: namespace_key})
-            if self.database_class == "mssql":
+            if self.database_class == "mssql" or self.database_class == "pyodbc":
                 join_strings.append("%s %s" % (table_name, namespace_key))
             else:
                 join_strings.append("%s.%s %s" % (self.database, table_name, namespace_key))
@@ -453,7 +453,7 @@ class Objects(BaseDBClass):
                 self._debug_handler("LIMIT: %s" % str(limit))
             self._debug_handler("-" * 80)
 
-        if limit and "mssql" in self.database_class.lower():
+        if limit and ("mssql" in self.database_class.lower() or "pyodbc" in self.database_class.lower()):
             query = "SELECT TOP (%i) %s FROM %s" % (limit, ",".join(columns), self.table)
 
         else:
@@ -472,7 +472,7 @@ class Objects(BaseDBClass):
         if order_by:
             query = "%s ORDER BY %s" % (query, order_by)
 
-        if limit and "mssql" not in self.database_class.lower():
+        if limit and "mssql" not in self.database_class.lower() and "pyodbc" not in self.database_class.lower():
             query = "%s LIMIT %i" % (query, limit)
 
         query = "%s;" % query
@@ -650,6 +650,7 @@ class Objects(BaseDBClass):
                     where_append = "%s >= %s" % (str(key), self._param_string())
             elif key_function == "in":
                 if not self.parametrized:
+                    v_val = v
                     if isinstance(v, list):
                         v_val = str(tuple(v))
                     where_append = "%s IN %s" % (str(key), v_val)
@@ -657,7 +658,10 @@ class Objects(BaseDBClass):
                     where_append = "%s IN %s" % (str(key), self._param_string())
             elif key_function == "not_in":
                 if not self.parametrized:
-                    where_append = "%s NOT IN %s" % (str(key), v)
+                    v_val = v
+                    if isinstance(v, list):
+                        v_val = str(tuple(v))
+                    where_append = "%s NOT IN %s" % (str(key), v_val)
                 else:
                     where_append = "%s NOT IN %s" % (str(key), self._param_string())
             else:
