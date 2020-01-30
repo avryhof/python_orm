@@ -180,6 +180,9 @@ class BaseDBClass(BaseClass):
     def _db_query(self, query, real_values=False):
         result = None
 
+        if self.database_class == "mssql":
+            real_values = tuple(real_values)
+
         if self.debug_queries:
             self._debug_handler(query)
 
