@@ -609,6 +609,18 @@ class Objects(BaseDBClass):
                 else:
                     where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
                     self.where_values.append(appendval)
+            elif key_function == "length_lt":
+                where_append = "LENGTH(%s) < %s" % (str(key), self._param_string())
+                self.where_values.append(v)
+            elif key_function == "length_lte":
+                where_append = "LENGTH(%s) <= %s" % (str(key), self._param_string())
+                self.where_values.append(v)
+            elif key_function == "length_gt":
+                where_append = "LENGTH(%s) > %s" % (str(key), self._param_string())
+                self.where_values.append(v)
+            elif key_function == "length_gte":
+                where_append = "LENGTH(%s) >= %s" % (str(key), self._param_string())
+                self.where_values.append(v)
             elif key_function == "iendswith":
                 appendval = v.upper()
                 if not self.parametrized:
