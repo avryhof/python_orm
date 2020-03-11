@@ -3,6 +3,9 @@ import struct
 import dateutil
 
 
+import pprint
+
+
 def get_val(target_object, key, default_value=None):
     if isinstance(target_object, dict):
         retn = target_object.get(key, default_value)
@@ -28,3 +31,15 @@ def handle_datetimeoffset(dto_value):
     retn = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:07d} {:+03d}:{:02d}".format(*tweaked)
 
     return dateutil.parser.parse(retn)
+
+
+def print_vals(target_object):
+    if not isinstance(target_object, dict):
+        print_object = dict()
+
+        for key in dir(target_object):
+            print_object.update({key: get_val(target_object, key)})
+
+        pprint.pprint(print_object)
+    else:
+        pprint.pprint(target_object)

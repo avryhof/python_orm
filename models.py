@@ -22,6 +22,7 @@ class Field:
     value = None
     db_table = None
     db_field = None
+    is_function = False
     field_type = ""
     max_length = None
     null_field = False
@@ -32,6 +33,7 @@ class Field:
     def __init__(self, **kwargs):
         self.db_field = kwargs.get("db_field", None)
         self.db_table = kwargs.get("db_table", None)
+        self.is_function = kwargs.get("function", False)
 
         self.field_type = kwargs.get("field_type", None)
         self.max_length = kwargs.get("max_length", None)
@@ -56,7 +58,7 @@ class IntegerField(Field):
         self.max_length = kwargs.get("max_length", 11)
 
     def __int__(self):
-        return self.value
+        return int(self.value)
 
 
 class AutoField(IntegerField):
@@ -342,6 +344,8 @@ class Objects(BaseDBClass):
             for attr_name in defined_fields:
                 attr = getattr(self.model_instance, attr_name, False)
 
+                attr_is_function = get_val(attr, "is_function", False)
+
                 attr_db_table = get_val(attr, "db_table", False)
                 attr_real_field = get_val(attr, "db_field", attr_name)
                 field_definition = get_val(attr, "field_type", "TEXT")
@@ -358,13 +362,16 @@ class Objects(BaseDBClass):
                     elif "DECIMAL" in field_definition:
                         field_definition = "REAL"
 
-                if attr_db_table and len(self.tables) > 0:
-                    real_column = "%s.%s" % (
-                        self.table_namespaces_lookup.get(attr_db_table),
-                        self.encap_string(attr_real_field),
-                    )
+                if not attr_is_function:
+                    if attr_db_table and len(self.tables) > 0:
+                        real_column = "%s.%s" % (
+                            self.table_namespaces_lookup.get(attr_db_table),
+                            self.encap_string(attr_real_field),
+                        )
+                    else:
+                        real_column = self.encap_string(attr_real_field)
                 else:
-                    real_column = self.encap_string(attr_real_field)
+                    real_column = attr_real_field
 
                 if attr_real_field == pk_name or get_val(attr, "primary_key", False):
                     if self.database_class == "sqlite":
@@ -422,6 +429,7 @@ class Objects(BaseDBClass):
 
         for table_name in self.table:
             namespace_key = re.sub("[^a-z]", "", table_name.lower())
+
             self.table_namespaces.update({namespace_key: table_name})
             self.table_namespaces_lookup.update({table_name: namespace_key})
             if self.database_class == "mssql" or self.database_class == "pyodbc":
@@ -845,3 +853,33 @@ class Objects(BaseDBClass):
         query_results = self.filter(**kwargs)
 
         return query_results
+
+    def raw_query(self, query, **kwargs):
+        return_dicts = kwargs.pop("return_dicts", False)
+        return_set = kwargs.pop("return_set", False)
+        return_set_key = kwargs.pop("return_set_key", None)
+
+        filter_result = []
+
+        try:
+            self._db_query(query)
+
+        except:
+            self._debug_handler(query)
+
+        else:
+            query_results = self._fetch_all()
+
+            print(query_results)
+
+            for query_result in query_results:
+                if return_set and return_set_key:
+                    filter_result.append(query_result.get(return_set_key))
+
+                elif return_dicts:
+                    filter_result.append(query_result)
+
+                else:
+                    filter_result.append(QueryObject(query_result, self))
+
+        return filter_result
