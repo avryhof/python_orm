@@ -1,4 +1,5 @@
 import json
+import pprint
 import re
 
 from .database import BaseDBClass
@@ -111,7 +112,6 @@ class DecimalField(Field):
         self.max_length = "%i, %i" % (self.max_digits, self.decimal_places)
 
     def __float__(self):
-
         return self.value
 
 
@@ -167,6 +167,7 @@ class Model:
     The first table in the db_table list is special, and if a db_table is not specified for a Field, the Object
     mapper will try to map the field to that database table.
     """
+
     fields = []
 
     objects = None
@@ -229,11 +230,13 @@ class Model:
 class QueryObject:
     container = dict()
     objects_instance = None
+    model = None
     pk = None
 
-    def __init__(self, items=False, objects_instance=None):
+    def __init__(self, items=False, objects_instance=None, *args, **kwargs):
         self.objects_instance = objects_instance
-        self.pk = self.objects_instance.model_instance.pk
+        self.model = self.objects_instance.model_instance
+        self.pk = self.model.pk
         if items:
             self.container = items
 
@@ -244,9 +247,36 @@ class QueryObject:
 
         return json.dumps(self.container)
 
-    def __getitem__(self, name):
+    def __getattr__(self, item):
+        pprint.pprint(dir(getattr(self.model, "__module__")))
 
-        return self.container.get(name)
+        return_value = None
+
+        if item in dir(self.model):
+            print(self.model)
+
+            modelattr = getattr(self.model, item, "FAILED")
+            print(item, modelattr)
+            return_value = modelattr(self)
+
+        print(return_value)
+
+        return return_value
+
+    def __getitem__(self, name):
+        return_value = None
+
+        if name in self.container:
+            return_value = self.container.get(name)
+
+        elif name in dir(self.model):
+            model_attr = getattr(self.model, name)
+            try:
+                return_value = model_attr(self)
+            except AttributeError:
+                return_value = model_attr
+
+        return return_value
 
     def update(self, **kwargs):
         for field, value in list(kwargs.items()):
@@ -602,6 +632,13 @@ class Objects(BaseDBClass):
                     where_append = "RIGHT(%s, %i) = '%s'" % (str(key), len(str(v)), self._param_string())
                 else:
                     where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), v)
+            elif key_function == "iendswith":
+                appendval = v.upper()
+                if not self.parametrized:
+                    where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), self._param_string())
+                    self.where_values.append(appendval)
+                else:
+                    where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), appendval)
             elif key_function == "istartswith":
                 appendval = v.upper()
                 if not self.parametrized:
@@ -793,6 +830,32 @@ class Objects(BaseDBClass):
         query = "%s;" % " ".join(query_parts)
 
         self._db_query(query)
+
+    def query_raw(self, query, **kwargs):
+        return_dicts = kwargs.pop("return_dicts", False)
+        return_set = kwargs.pop("return_set", False)
+        return_set_key = kwargs.pop("return_set_key", None)
+
+        filter_result = []
+
+        try:
+            self._debug_handler(query)
+        except:
+            self._debug_handler(query)
+
+        else:
+            query_results = self._fetch_all()
+            for query_result in query_results:
+                if return_set and return_set_key:
+                    filter_result.append(query_result.get(return_set_key))
+
+                elif return_dicts:
+                    filter_result.append(query_result)
+
+                else:
+                    filter_result.append(QueryObject(query_result, self))
+
+        return filter_result
 
     def filter(self, **kwargs):
         return_dicts = kwargs.pop("return_dicts", False)

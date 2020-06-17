@@ -1,3 +1,4 @@
+import importlib
 import pprint
 import sqlite3
 
@@ -46,6 +47,9 @@ class BaseDBClass(BaseClass):
         default_database = kwargs.get("database", settings.DATABASE)
 
         self.db_client = kwargs.get("db_client", default_database.get("ENGINE"))
+
+        if isinstance(self.db_client, str):
+            self.db_client = importlib.import_module(self.db_client)
 
         if hasattr(self.db_client, "sqlite_version"):
             self.database_class = "sqlite"
