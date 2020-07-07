@@ -2,9 +2,10 @@ import json
 import pprint
 import re
 
+from utilities.debugging import log_message
 from .database import BaseDBClass
 from .exceptions import FailedToBind, ObjectDoesNotExist, MultipleObjectsReturned
-from .helpers import get_val
+from .helpers import get_val, safe_json_serialize
 
 
 class Field:
@@ -244,11 +245,15 @@ class QueryObject:
             setattr(self, k, v)
 
     def __str__(self):
+        retn = self.container
 
-        return json.dumps(self.container)
+        if self.container:
+            retn = json.dumps(safe_json_serialize(self.container))
+
+        return retn
 
     def __getattr__(self, item):
-        pprint.pprint(dir(getattr(self.model, "__module__")))
+        # pprint.pprint(dir(getattr(self.model, "__module__")))
 
         return_value = None
 

@@ -1,3 +1,4 @@
+import datetime
 import pprint
 import struct
 
@@ -27,6 +28,16 @@ def handle_datetimeoffset(dto_value):
     retn = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:07d} {:+03d}:{:02d}".format(*tweaked)
 
     return dateutil.parser.parse(retn)
+
+
+def safe_json_serialize(input_dict):
+    for k, v in input_dict.items():
+        if isinstance(v, dict):
+            input_dict[k] = safe_json_serialize(v)
+        elif isinstance(v, datetime.datetime):
+            input_dict[k] = v.isoformat()
+
+    return input_dict
 
 
 def print_vals(target_object):
