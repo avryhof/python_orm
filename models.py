@@ -264,7 +264,7 @@ class QueryObject:
             print(item, modelattr)
             return_value = modelattr(self)
 
-        print(return_value)
+        # print(return_value)
 
         return return_value
 
