@@ -1,13 +1,16 @@
+import getpass
 import importlib
-import pprint
+import os
 import sqlite3
 
-import pyodbc
 from psycopg2.extras import DictCursor
+from sshtunnel import SSHTunnelForwarder
 
 from . import settings
 from .base_class import BaseClass
 from .helpers import handle_datetimeoffset
+
+PROFILE_DIR = os.environ.get("USERPROFILE", os.path.join("/", "home", getpass.getuser()))
 
 
 class BaseDBClass(BaseClass):
@@ -19,13 +22,19 @@ class BaseDBClass(BaseClass):
 
     debug_queries = False
 
+    default_database = None
     database = None
     database_class = None
+
+    is_ssh_tunnel = False
+    ssh_server = None
+    ssh_tunnel = False
 
     server = None
     user = None
     db_file = None
     db_name = None
+    port = False
 
     dsn = None
     db_client = None
@@ -44,9 +53,9 @@ class BaseDBClass(BaseClass):
 
         self._debug_handler("Initialize Database Class")
 
-        default_database = kwargs.get("database", settings.DATABASE)
+        self.default_database = kwargs.get("database", settings.DATABASE)
 
-        self.db_client = kwargs.get("db_client", default_database.get("ENGINE"))
+        self.db_client = kwargs.get("db_client", self.default_database.get("ENGINE"))
 
         if isinstance(self.db_client, str):
             self.db_client = importlib.import_module(self.db_client)
@@ -59,7 +68,7 @@ class BaseDBClass(BaseClass):
             self.database_class = self.db_client.__name__
             if "mssql" in self.database_class:
                 self.database_class = "mssql"
-            elif  "pyodbc" in self.database_class:
+            elif "pyodbc" in self.database_class:
                 self.database_class = "pyodbc"
         else:
             self._debug_handler("Could not detect database class.")
@@ -67,13 +76,26 @@ class BaseDBClass(BaseClass):
 
         self._debug_handler("DATABASE CLASS: %s" % self.database_class)
 
-        self.server = kwargs.get("server", default_database.get("HOST"))
-        self.user = kwargs.get("user", default_database.get("USER"))
-        password = kwargs.get("password", default_database.get("PASSWORD"))
-        self.db_file = kwargs.get("file", default_database.get("FILE"))
-        self.db_name = kwargs.get("name", default_database.get("NAME"))
+        self.is_ssh_tunnel = kwargs.get("ssh_tunnel", self.default_database.get("SSH_TUNNEL", False))
 
-        self._debug_handler("Connecting to %s -> %s as %s" % (self.server, self.db_name, self.user))
+        if self.is_ssh_tunnel:
+            ssh_host = kwargs.get("server", self.default_database.get("HOST"))
+            self._init_ssh_tunnel(
+                ssh_host,
+            )
+            self.server = "localhost"
+        else:
+            self.server = kwargs.get("server", self.default_database.get("HOST"))
+
+        self.user = kwargs.get("user", self.default_database.get("USER"))
+        password = kwargs.get("password", self.default_database.get("PASSWORD"))
+        self.db_file = kwargs.get("file", self.default_database.get("FILE"))
+        self.db_name = kwargs.get("name", self.default_database.get("NAME"))
+
+        if self.port:
+            self._debug_handler("Connecting to %s:%i -> %s as %s" % (self.server, self.port, self.db_name, self.user))
+        else:
+            self._debug_handler("Connecting to %s -> %s as %s" % (self.server, self.db_name, self.user))
 
         self.database = self.db_name
 
@@ -83,8 +105,21 @@ class BaseDBClass(BaseClass):
             self.cursor = self.conn.cursor()
 
         elif self.database_class == "psql":
-            self.dsn = "dbname='%s' user='%s' host='%s' password='%s'" % (
-                self.db_name, self.user, self.server, password)
+            if self.port:
+                self.dsn = "dbname='%s' user='%s' host='%s' port=%i password='%s'" % (
+                    self.db_name,
+                    self.user,
+                    self.server,
+                    int(self.port),
+                    password,
+                )
+            else:
+                self.dsn = "dbname='%s' user='%s' host='%s' password='%s'" % (
+                    self.db_name,
+                    self.user,
+                    self.server,
+                    password,
+                )
             self.conn = self.db_client.connect(self.dsn, cursor_factory=DictCursor)
             self.cursor = self.conn.cursor(cursor_factory=DictCursor)
 
@@ -94,7 +129,7 @@ class BaseDBClass(BaseClass):
 
         elif self.database_class == "pyodbc":
             self.conn = self.db_client.connect(
-                'DRIVER={ODBC Driver 17 for SQL Server};SERVER=%s;DATABASE=%s;UID=%s;PWD=%s'
+                "DRIVER={ODBC Driver 17 for SQL Server};SERVER=%s;DATABASE=%s;UID=%s;PWD=%s"
                 % (self.server, self.db_name, self.user, password)
             )
             self.conn.add_output_converter(-155, handle_datetimeoffset)
@@ -113,7 +148,43 @@ class BaseDBClass(BaseClass):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.conn.close()
 
+        if self.ssh_server:
+            self.ssh_server.stop()
+
         super(BaseDBClass, self).__exit__(exc_type, exc_val, exc_tb)
+
+    def _init_ssh_tunnel(self, ssh_host, **kwargs):
+        default_username = os.path.split(PROFILE_DIR)[-1]
+        default_private_key = os.path.join(PROFILE_DIR, ".ssh", "id_rsa")
+        ssh_username = kwargs.get("username", self.default_database.get("SSH_USERNAME", default_username))
+        ssh_password = kwargs.get("password", self.default_database.get("SSH_PASSWORD"))
+        private_key = kwargs.get("private_key", self.default_database.get("SSH_PRIVATE_KEY", default_private_key))
+        private_key_passphrase = kwargs.get(
+            "private_key_passphrase", self.default_database.get("SSH_PRIVATE_KEY_PASSPHRASE", ssh_password)
+        )
+        db_port = kwargs.get("db_port", int(self.default_database.get("PORT")))
+
+        self._debug_handler("Initiate SSH Connection.")
+
+        try:
+            ssh_params = dict(ssh_username=ssh_username, remote_bind_address=("localhost", db_port),)
+
+            if private_key:
+                ssh_params.update(
+                    ssh_private_key=private_key, ssh_private_key_password=private_key_passphrase,
+                )
+            elif ssh_password:
+                ssh_params.update(ssh_password=ssh_password)
+
+            self.ssh_server = SSHTunnelForwarder((ssh_host, 22), **ssh_params)
+            self.ssh_server.start()
+            self.port = int(self.ssh_server.local_bind_port)
+
+        except:
+            self.is_ssh_tunnel = False
+            self._debug_handler("SSH Connection Failed")
+        else:
+            self._debug_handler("SSH Connection Connected: %s:%i" % (self.ssh_server.ssh_host, self.port))
 
     def _param_string(self):
         if self.database_class in ["psql", "mssql"]:

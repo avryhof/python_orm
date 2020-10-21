@@ -238,6 +238,9 @@ class QueryObject:
         self.objects_instance = objects_instance
         self.model = self.objects_instance.model_instance
         self.pk = self.model.pk
+        if isinstance(self.pk, str):
+            self.pk = "'%s'" % self.pk
+
         if items:
             self.container = items
 
@@ -296,7 +299,7 @@ class QueryObject:
 
     def save(self):
 
-        return self.objects_instance.update(self.container)
+        return self.objects_instance.update(**self.container)
 
 
 class Objects(BaseDBClass):
@@ -789,6 +792,8 @@ class Objects(BaseDBClass):
         for field, value in list(kwargs.items()):
             real_column = self.column_lookup.get(field, field)
             insert_fields.append(self.encap_string(real_column))
+            if isinstance(value, list):
+                value = json.dumps(value)
             real_insert_values.append(value)
             insert_values.append(self._param_string())
 
@@ -810,11 +815,15 @@ class Objects(BaseDBClass):
         for field, value in list(fields.items()):
             real_column = self.column_lookup.get(field, field)
             update_values.append("%s=%s" % (self.encap_string(real_column), self._param_string()))
+            if isinstance(value, list):
+                value = json.dumps(value)
             real_insert_values.append(value)
 
         query_parts.append(",".join(update_values))
         query_parts.append("WHERE")
-        query_parts.append("%s=%s" % (self.encap_string(self.model_instance.pk), fields.get(self.model_instance.pk)))
+        # query_parts.append("%s=%s" % (self.encap_string(self.model_instance.pk), fields.get(self.model_instance.pk)))
+        query_parts.append(self.encap_string(self.model_instance.pk) + "=%s")
+        real_insert_values.append(fields.get(self.model_instance.pk))
 
         query = "%s;" % " ".join(query_parts)
 
