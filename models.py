@@ -898,6 +898,8 @@ class Objects(BaseDBClass):
         else:
             query = self._build_query(columns=columns, limit=result_limit, order_by=order_by)
 
+        # print(query)
+
         # self.debug = True
         # self.debug_queries = True
         # self.debug_stdout = True
