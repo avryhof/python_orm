@@ -1,5 +1,4 @@
 import pymssql
-import pyodbc
 from django.conf import settings
 
 DATABASE = settings.PHG_DATABASE

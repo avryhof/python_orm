@@ -4,7 +4,6 @@ import os
 import sqlite3
 
 from psycopg2.extras import DictCursor
-from sshtunnel import SSHTunnelForwarder
 
 from . import settings
 from .base_class import BaseClass
@@ -153,38 +152,38 @@ class BaseDBClass(BaseClass):
 
         super(BaseDBClass, self).__exit__(exc_type, exc_val, exc_tb)
 
-    def _init_ssh_tunnel(self, ssh_host, **kwargs):
-        default_username = os.path.split(PROFILE_DIR)[-1]
-        default_private_key = os.path.join(PROFILE_DIR, ".ssh", "id_rsa")
-        ssh_username = kwargs.get("username", self.default_database.get("SSH_USERNAME", default_username))
-        ssh_password = kwargs.get("password", self.default_database.get("SSH_PASSWORD"))
-        private_key = kwargs.get("private_key", self.default_database.get("SSH_PRIVATE_KEY", default_private_key))
-        private_key_passphrase = kwargs.get(
-            "private_key_passphrase", self.default_database.get("SSH_PRIVATE_KEY_PASSPHRASE", ssh_password)
-        )
-        db_port = kwargs.get("db_port", int(self.default_database.get("PORT")))
-
-        self._debug_handler("Initiate SSH Connection.")
-
-        try:
-            ssh_params = dict(ssh_username=ssh_username, remote_bind_address=("localhost", db_port),)
-
-            if private_key:
-                ssh_params.update(
-                    ssh_private_key=private_key, ssh_private_key_password=private_key_passphrase,
-                )
-            elif ssh_password:
-                ssh_params.update(ssh_password=ssh_password)
-
-            self.ssh_server = SSHTunnelForwarder((ssh_host, 22), **ssh_params)
-            self.ssh_server.start()
-            self.port = int(self.ssh_server.local_bind_port)
-
-        except:
-            self.is_ssh_tunnel = False
-            self._debug_handler("SSH Connection Failed")
-        else:
-            self._debug_handler("SSH Connection Connected: %s:%i" % (self.ssh_server.ssh_host, self.port))
+    # def _init_ssh_tunnel(self, ssh_host, **kwargs):
+    #     default_username = os.path.split(PROFILE_DIR)[-1]
+    #     default_private_key = os.path.join(PROFILE_DIR, ".ssh", "id_rsa")
+    #     ssh_username = kwargs.get("username", self.default_database.get("SSH_USERNAME", default_username))
+    #     ssh_password = kwargs.get("password", self.default_database.get("SSH_PASSWORD"))
+    #     private_key = kwargs.get("private_key", self.default_database.get("SSH_PRIVATE_KEY", default_private_key))
+    #     private_key_passphrase = kwargs.get(
+    #         "private_key_passphrase", self.default_database.get("SSH_PRIVATE_KEY_PASSPHRASE", ssh_password)
+    #     )
+    #     db_port = kwargs.get("db_port", int(self.default_database.get("PORT")))
+    #
+    #     self._debug_handler("Initiate SSH Connection.")
+    #
+    #     try:
+    #         ssh_params = dict(ssh_username=ssh_username, remote_bind_address=("localhost", db_port),)
+    #
+    #         if private_key:
+    #             ssh_params.update(
+    #                 ssh_private_key=private_key, ssh_private_key_password=private_key_passphrase,
+    #             )
+    #         elif ssh_password:
+    #             ssh_params.update(ssh_password=ssh_password)
+    #
+    #         self.ssh_server = SSHTunnelForwarder((ssh_host, 22), **ssh_params)
+    #         self.ssh_server.start()
+    #         self.port = int(self.ssh_server.local_bind_port)
+    #
+    #     except:
+    #         self.is_ssh_tunnel = False
+    #         self._debug_handler("SSH Connection Failed")
+    #     else:
+    #         self._debug_handler("SSH Connection Connected: %s:%i" % (self.ssh_server.ssh_host, self.port))
 
     def _param_string(self):
         if self.database_class in ["psql", "mssql"]:
