@@ -598,174 +598,175 @@ class Objects(BaseDBClass):
 
         real_values = []
         for k, v in list(kwargs.items()):
-            key_parts = k.split("__")
-            key = key_parts[0]
-            key_function = key_parts[1] if len(key_parts) > 1 else None
-            key_operator = key_parts[2] if len(key_parts) > 2 else "and"
+            if v is not None:
+                key_parts = k.split("__")
+                key = key_parts[0]
+                key_function = key_parts[1] if len(key_parts) > 1 else None
+                key_operator = key_parts[2] if len(key_parts) > 2 else "and"
 
-            if key_function not in ["iexact", "icontains", "istartswith", "iendswith", "contains"]:
-                self.where_values.append(v)
+                if key_function not in ["iexact", "icontains", "istartswith", "iendswith", "contains"]:
+                    self.where_values.append(v)
 
-            # If a Field is defined on the model, we translate it.
-            key = self.column_lookup.get(key, key)
+                # If a Field is defined on the model, we translate it.
+                key = self.column_lookup.get(key, key)
 
-            if key_function == "iexact":
-                appendval = v.upper()
-                if not self.parametrized:
-                    where_append = "UPPER(%s) = '%s'" % (str(key), appendval)
-                else:
-                    where_append = "UPPER(%s) = %s" % (str(key), self._param_string())
-                    self.where_values.append(appendval)
-            elif key_function == "icontains":
-                appendval = "%" + v.upper() + "%"
-                if not self.parametrized:
-                    where_append = "UPPER(%s) LIKE '%s'" % (str(key), appendval)
-                else:
-                    where_append = "UPPER(%s) LIKE %s" % (str(key), self._param_string())
-                    self.where_values.append(appendval)
-            elif key_function == "contains":
-                appendval = "%" + v + "%"
-                if not self.parametrized:
-                    where_append = "%s LIKE '%s'" % (str(key), appendval)
-                else:
-                    where_append = "%s LIKE %s" % (str(key), self._param_string())
-                    self.where_values.append(appendval)
-            elif key_function == "startswith":  # Seems *slightly* faster than LIKE '...%'
-                if not self.parametrized:
-                    where_append = "LEFT(%s, %i) = '%s'" % (str(key), len(str(v)), v)
-                else:
-                    where_append = "LEFT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
-            elif key_function == "endswith":
-                if not self.parametrized:
-                    where_append = "RIGHT(%s, %i) = '%s'" % (str(key), len(str(v)), self._param_string())
-                else:
-                    where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), v)
-            elif key_function == "iendswith":
-                appendval = v.upper()
-                if not self.parametrized:
-                    where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), self._param_string())
-                    self.where_values.append(appendval)
-                else:
-                    where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), appendval)
-            elif key_function == "istartswith":
-                appendval = v.upper()
-                if not self.parametrized:
-                    where_append = "UPPER(LEFT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
-                else:
-                    where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
-                    self.where_values.append(appendval)
-            elif key_function == "length_lt":
-                where_append = "LENGTH(%s) < %s" % (str(key), self._param_string())
-                self.where_values.append(v)
-            elif key_function == "length_lte":
-                where_append = "LENGTH(%s) <= %s" % (str(key), self._param_string())
-                self.where_values.append(v)
-            elif key_function == "length_gt":
-                where_append = "LENGTH(%s) > %s" % (str(key), self._param_string())
-                self.where_values.append(v)
-            elif key_function == "length_gte":
-                where_append = "LENGTH(%s) >= %s" % (str(key), self._param_string())
-                self.where_values.append(v)
-            elif key_function == "iendswith":
-                appendval = v.upper()
-                if not self.parametrized:
-                    where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
-                else:
-                    where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
-                    self.where_values.append(appendval)
-            elif key_function == "not_like":
-                if not self.parametrized:
-                    where_append = "%s NOT LIKE '%s'" % (str(key), v)
-                else:
-                    where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
-            elif key_function == "isnull":
-                comparison = "IS NOT" if not v else "IS"
-                where_append = "%s %s NULL" % (str(key), comparison)
-            elif key_function == "lt":
-                if not self.parametrized:
-                    if isinstance(v, str):
-                        where_append = "%s < '%s'" % (str(key), v)
+                if key_function == "iexact":
+                    appendval = v.upper()
+                    if not self.parametrized:
+                        where_append = "UPPER(%s) = '%s'" % (str(key), appendval)
                     else:
-                        where_append = "%s < %s" % (str(key), v)
-                else:
-                    where_append = "%s < %s" % (str(key), self._param_string())
-            elif key_function == "lte":
-                if not self.parametrized:
-                    if isinstance(v, str):
-                        where_append = "%s <= '%s'" % (str(key), v)
+                        where_append = "UPPER(%s) = %s" % (str(key), self._param_string())
+                        self.where_values.append(appendval)
+                elif key_function == "icontains":
+                    appendval = "%" + v.upper() + "%"
+                    if not self.parametrized:
+                        where_append = "UPPER(%s) LIKE '%s'" % (str(key), appendval)
                     else:
-                        where_append = "%s <= %s" % (str(key), v)
-                else:
-                    where_append = "%s <= %s" % (str(key), self._param_string())
-            elif key_function == "gt":
-                if not self.parametrized:
-                    if isinstance(v, str):
-                        where_append = "%s > '%s'" % (str(key), v)
+                        where_append = "UPPER(%s) LIKE %s" % (str(key), self._param_string())
+                        self.where_values.append(appendval)
+                elif key_function == "contains":
+                    appendval = "%" + v + "%"
+                    if not self.parametrized:
+                        where_append = "%s LIKE '%s'" % (str(key), appendval)
                     else:
-                        where_append = "%s > %s" % (str(key), v)
-                else:
-                    where_append = "%s > %s" % (str(key), self._param_string())
-            elif key_function == "gte":
-                if not self.parametrized:
-                    if isinstance(v, str):
-                        where_append = "%s >= '%s'" % (str(key), v)
+                        where_append = "%s LIKE %s" % (str(key), self._param_string())
+                        self.where_values.append(appendval)
+                elif key_function == "startswith":  # Seems *slightly* faster than LIKE '...%'
+                    if not self.parametrized:
+                        where_append = "LEFT(%s, %i) = '%s'" % (str(key), len(str(v)), v)
                     else:
-                        where_append = "%s >= %s" % (str(key), v)
-                else:
-                    where_append = "%s >= %s" % (str(key), self._param_string())
-            elif key_function == "in":
-                if not self.parametrized:
-                    v_val = v
-                    if isinstance(v, list):
-                        v_val = str(tuple(v))
-                    where_append = "%s IN %s" % (str(key), v_val)
-                else:
-                    where_append = "%s IN %s" % (str(key), self._param_string())
-            elif key_function == "not_in":
-                if not self.parametrized:
-                    v_val = v
-                    if isinstance(v, list):
-                        v_val = str(tuple(v))
-                    where_append = "%s NOT IN %s" % (str(key), v_val)
-                else:
-                    where_append = "%s NOT IN %s" % (str(key), self._param_string())
-            else:
-                if not self.parametrized:
-                    if isinstance(v, str):
-                        where_append = "%s = '%s'" % (str(key), v)
+                        where_append = "LEFT(%s, %i) = %s" % (str(key), len(str(v)), self._param_string())
+                elif key_function == "endswith":
+                    if not self.parametrized:
+                        where_append = "RIGHT(%s, %i) = '%s'" % (str(key), len(str(v)), self._param_string())
                     else:
-                        where_append = "%s = %s" % (str(key), v)
+                        where_append = "RIGHT(%s, %i) = %s" % (str(key), len(str(v)), v)
+                elif key_function == "iendswith":
+                    appendval = v.upper()
+                    if not self.parametrized:
+                        where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), self._param_string())
+                        self.where_values.append(appendval)
+                    else:
+                        where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), appendval)
+                elif key_function == "istartswith":
+                    appendval = v.upper()
+                    if not self.parametrized:
+                        where_append = "UPPER(LEFT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
+                    else:
+                        where_append = "UPPER(LEFT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                        self.where_values.append(appendval)
+                elif key_function == "length_lt":
+                    where_append = "LENGTH(%s) < %s" % (str(key), self._param_string())
+                    self.where_values.append(v)
+                elif key_function == "length_lte":
+                    where_append = "LENGTH(%s) <= %s" % (str(key), self._param_string())
+                    self.where_values.append(v)
+                elif key_function == "length_gt":
+                    where_append = "LENGTH(%s) > %s" % (str(key), self._param_string())
+                    self.where_values.append(v)
+                elif key_function == "length_gte":
+                    where_append = "LENGTH(%s) >= %s" % (str(key), self._param_string())
+                    self.where_values.append(v)
+                elif key_function == "iendswith":
+                    appendval = v.upper()
+                    if not self.parametrized:
+                        where_append = "UPPER(RIGHT(%s, %i)) = '%s'" % (str(key), len(str(v)), appendval)
+                    else:
+                        where_append = "UPPER(RIGHT(%s, %i)) = %s" % (str(key), len(str(v)), self._param_string())
+                        self.where_values.append(appendval)
+                elif key_function == "not_like":
+                    if not self.parametrized:
+                        where_append = "%s NOT LIKE '%s'" % (str(key), v)
+                    else:
+                        where_append = "%s NOT LIKE %s" % (str(key), self._param_string())
+                elif key_function == "isnull":
+                    comparison = "IS NOT" if not v else "IS"
+                    where_append = "%s %s NULL" % (str(key), comparison)
+                elif key_function == "lt":
+                    if not self.parametrized:
+                        if isinstance(v, str):
+                            where_append = "%s < '%s'" % (str(key), v)
+                        else:
+                            where_append = "%s < %s" % (str(key), v)
+                    else:
+                        where_append = "%s < %s" % (str(key), self._param_string())
+                elif key_function == "lte":
+                    if not self.parametrized:
+                        if isinstance(v, str):
+                            where_append = "%s <= '%s'" % (str(key), v)
+                        else:
+                            where_append = "%s <= %s" % (str(key), v)
+                    else:
+                        where_append = "%s <= %s" % (str(key), self._param_string())
+                elif key_function == "gt":
+                    if not self.parametrized:
+                        if isinstance(v, str):
+                            where_append = "%s > '%s'" % (str(key), v)
+                        else:
+                            where_append = "%s > %s" % (str(key), v)
+                    else:
+                        where_append = "%s > %s" % (str(key), self._param_string())
+                elif key_function == "gte":
+                    if not self.parametrized:
+                        if isinstance(v, str):
+                            where_append = "%s >= '%s'" % (str(key), v)
+                        else:
+                            where_append = "%s >= %s" % (str(key), v)
+                    else:
+                        where_append = "%s >= %s" % (str(key), self._param_string())
+                elif key_function == "in":
+                    if not self.parametrized:
+                        v_val = v
+                        if isinstance(v, list):
+                            v_val = str(tuple(v))
+                        where_append = "%s IN %s" % (str(key), v_val)
+                    else:
+                        where_append = "%s IN %s" % (str(key), self._param_string())
+                elif key_function == "not_in":
+                    if not self.parametrized:
+                        v_val = v
+                        if isinstance(v, list):
+                            v_val = str(tuple(v))
+                        where_append = "%s NOT IN %s" % (str(key), v_val)
+                    else:
+                        where_append = "%s NOT IN %s" % (str(key), self._param_string())
                 else:
-                    where_append = "%s = %s" % (str(key), self._param_string())
+                    if not self.parametrized:
+                        if isinstance(v, str):
+                            where_append = "%s = '%s'" % (str(key), v)
+                        else:
+                            where_append = "%s = %s" % (str(key), v)
+                    else:
+                        where_append = "%s = %s" % (str(key), self._param_string())
 
-            where_string = ""
+                where_string = ""
 
-            if key_operator:
-                key_operator_parts = key_operator.split("_")
-                operator_length = len(key_operator_parts)
+                if key_operator:
+                    key_operator_parts = key_operator.split("_")
+                    operator_length = len(key_operator_parts)
 
-                if operator_length > 0:
-                    key_operator = key_operator_parts[0].upper()
+                    if operator_length > 0:
+                        key_operator = key_operator_parts[0].upper()
 
-                second_key_operator = None
-                if operator_length > 1:
-                    second_key_operator = key_operator_parts[1].upper()
+                    second_key_operator = None
+                    if operator_length > 1:
+                        second_key_operator = key_operator_parts[1].upper()
 
-                key_operator_action = "START"
-                if operator_length > 2:
-                    key_operator_action = key_operator_parts[2].upper()
+                    key_operator_action = "START"
+                    if operator_length > 2:
+                        key_operator_action = key_operator_parts[2].upper()
 
-                if len(wheres) > 0:
-                    if operator_length == 1:
-                        where_string = "%s %s" % (key_operator, where_append)
-                    elif operator_length == 2:
-                        where_string = "%s (%s" % (key_operator, where_append)
-                    elif operator_length == 3 and key_operator_action == "END":
-                        where_string = "%s %s)" % (second_key_operator, where_append)
-                    where_append = ""
+                    if len(wheres) > 0:
+                        if operator_length == 1:
+                            where_string = "%s %s" % (key_operator, where_append)
+                        elif operator_length == 2:
+                            where_string = "%s (%s" % (key_operator, where_append)
+                        elif operator_length == 3 and key_operator_action == "END":
+                            where_string = "%s %s)" % (second_key_operator, where_append)
+                        where_append = ""
 
-            where_string = "%s %s".strip() % (where_string, where_append)
-            wheres.append(where_string)
+                where_string = "%s %s".strip() % (where_string, where_append)
+                wheres.append(where_string)
 
         where_return = " ".join(wheres).replace("  ", " ").strip()
 
