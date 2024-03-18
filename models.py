@@ -1,8 +1,10 @@
+import datetime
+import decimal
 import json
-import pprint
 import re
 
-from utilities.debugging import log_message
+from dateutil.parser import parse
+
 from .database import BaseDBClass
 from .exceptions import FailedToBind, ObjectDoesNotExist, MultipleObjectsReturned
 from .helpers import get_val, safe_json_serialize
@@ -26,6 +28,7 @@ class Field:
     db_field = None
     is_function = False
     field_type = ""
+    field_data_type = (int, str, float, datetime.date, datetime.datetime, decimal.Decimal)
     max_length = None
     null_field = False
     field_auto_increment = False
@@ -52,12 +55,51 @@ class Field:
 
         return retn
 
+    def set_value(self, value):
+        self.value = value
+        self.check_value()
+
+    def check_value(self):
+        if self.value is not None and not isinstance(self.value, self.field_data_type):
+            if hasattr(self, "process_value"):
+                self.process_value()
+            else:
+                raise TypeError(f"Value {self.value}  is not of type {self.field_data_type}.")
+
+    def process_value(self):
+        if callable(self.field_data_type):
+            try:
+                self.value = self.field_data_type(self.value)
+            except Exception as e:
+                raise TypeError(
+                    f"Value {self.value} ({type(self.value)}) cannot be converted to {self.field_data_type} ({e})."
+                )
+        else:
+            print(f"{self.field_data_type} is not callable.")
+
+        raise TypeError(f"Value {self.value} ({type(self.value)}) cannot be converted to {self.field_data_type}.")
+
 
 class IntegerField(Field):
     def __init__(self, **kwargs):
         super(IntegerField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "INTEGER")
+        self.field_data_type = int
         self.max_length = kwargs.get("max_length", 11)
+
+    def __int__(self):
+        return int(self.value)
+
+    def process_value(self):
+        try:
+            self.value = int(self.value)
+        except ValueError:
+            raise TypeError(f"Value {self.value} ({type(self.value)}) cannot be converted to {self.field_data_type}.")
+
+
+class BigIntegerField(IntegerField):
+    def __init__(self, **kwargs):
+        super(BigIntegerField, self).__init__(**kwargs)
 
     def __int__(self):
         return int(self.value)
@@ -86,19 +128,81 @@ class CharField(Field):
     def __init__(self, **kwargs):
         super(CharField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "VARCHAR")
+        self.field_data_type = str
         self.max_length = kwargs.get("max_length", 64)
 
+    # def process_value(self, value):
+    #     try:
+    #         self.value = str(self.value)
+    #     except ValueError:
+    #         raise TypeError(f"Value {self.value}  cannot be converted to {self.field_data_type}.")
 
-class DateField(Field):
+
+class BaseDateTimeField(Field):
+    def __init__(self, **kwargs):
+        super(BaseDateTimeField, self).__init__(**kwargs)
+        self.field_type = kwargs.get("field_type", "DATETIME")
+        self.field_data_type = (datetime.datetime, datetime.date)
+
+    def interpret_date(self, value):
+        year = int(value[0:4])
+        month = int(value[4:6])
+        day = int(value[6:8])
+
+        print(value, year, month, day)
+
+        dt = datetime.datetime(year=year, month=month, day=day)
+
+        return dt.date()
+
+    def interpret_time(self, value):
+        hour = int(value[0:2])
+        minute = int(value[2:4])
+        second = 0
+
+        if len(value) == 6:
+            second = int(value[4:6])
+
+        return datetime.time(hour=hour, minute=minute, second=second)
+
+
+class DateField(BaseDateTimeField):
     def __init__(self, **kwargs):
         super(DateField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "DATE")
+        self.field_data_type = datetime.date
+
+    def process_value(self):
+        try:
+            self.value = self.interpret_date(self.value)
+        except ValueError:
+            raise TypeError(f"Value {self.value}  cannot be converted to {self.field_data_type}.")
 
 
-class DateTimeField(Field):
+class DateTimeField(BaseDateTimeField):
     def __init__(self, **kwargs):
         super(DateTimeField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "DATETIME")
+        self.field_data_type = datetime.datetime
+
+    def process_value(self):
+        try:
+            self.value = parse(self.value)
+
+        except Exception:
+            if isinstance(self.value, str):
+                date_value, time_value = self.value.split(" ")
+                date_date = self.interpret_date(date_value)
+                time_time = self.interpret_time(time_value)
+
+                self.value = datetime.datetime(
+                    year=date_date.year,
+                    month=date_date.month,
+                    day=date_date.day,
+                    hour=time_time.hour,
+                    minute=time_time.minute,
+                    second=time_time.second,
+                )
 
 
 class DecimalField(Field):
@@ -108,6 +212,7 @@ class DecimalField(Field):
     def __init__(self, **kwargs):
         super(DecimalField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "DECIMAL")
+        self.field_data_type = decimal.Decimal
         self.max_digits = kwargs.get("max_digits", 8)
         self.decimal_places = kwargs.get("decimal_places", 6)
         self.max_length = "%i, %i" % (self.max_digits, self.decimal_places)
@@ -115,11 +220,18 @@ class DecimalField(Field):
     def __float__(self):
         return self.value
 
+    # def process_value(self, value):
+    #     try:
+    #         self.value = decimal.Decimal(self.value)
+    #     except ValueError:
+    #         raise TypeError(f"Value {self.value}  cannot be converted to {self.field_data_type}.")
+
 
 class FloatField(Field):
     def __init__(self, **kwargs):
         super(FloatField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "FLOAT")
+        self.field_data_type = float
 
     def __float__(self):
         return self.value
@@ -129,6 +241,7 @@ class TextField(Field):
     def __init__(self, **kwargs):
         super(TextField, self).__init__(**kwargs)
         self.field_type = kwargs.get("field_type", "TEXT")
+        self.field_data_type = str
 
 
 class Model:
@@ -238,6 +351,7 @@ class QueryObject:
         self.objects_instance = objects_instance
         self.model = self.objects_instance.model_instance
         self.pk = self.model.pk
+
         if isinstance(self.pk, str):
             self.pk = "'%s'" % self.pk
 
@@ -246,6 +360,11 @@ class QueryObject:
 
         for k, v in list(self.container.items()):
             setattr(self, k, v)
+
+            value_class = getattr(self.model, k)
+            value_class.set_value(v)
+
+            self.container.update({k: value_class.value})
 
     def __str__(self):
         retn = self.container
@@ -256,18 +375,11 @@ class QueryObject:
         return retn
 
     def __getattr__(self, item):
-        # pprint.pprint(dir(getattr(self.model, "__module__")))
-
         return_value = None
 
         if item in dir(self.model):
-            print(self.model)
-
             modelattr = getattr(self.model, item, "FAILED")
-            print(item, modelattr)
             return_value = modelattr(self)
-
-        # print(return_value)
 
         return return_value
 
@@ -275,30 +387,27 @@ class QueryObject:
         return_value = None
 
         if name in self.container:
-            return_value = self.container.get(name)
-
-        elif name in dir(self.model):
-            model_attr = getattr(self.model, name)
-            try:
-                return_value = model_attr(self)
-            except AttributeError:
-                return_value = model_attr
+            return self.container.get(name)
 
         return return_value
+
+    def as_dict(self):
+        return self.container
 
     def update(self, **kwargs):
         for field, value in list(kwargs.items()):
             if field in self.container:
-                self.container[field] = value
+                value_class = getattr(self.model, field)
+                value_class.set_value(value)
+
+                self.container[field] = value_class.value
 
         return self
 
     def delete(self):
-
         self.objects_instance.delete(self.container)
 
     def save(self):
-
         return self.objects_instance.update(**self.container)
 
 
@@ -953,6 +1062,8 @@ class Objects(BaseDBClass):
 
         filter_result = []
 
+        self.debug_queries = True
+
         try:
             self._db_query(query)
 
@@ -961,8 +1072,6 @@ class Objects(BaseDBClass):
 
         else:
             query_results = self._fetch_all()
-
-            print(query_results)
 
             for query_result in query_results:
                 if return_set and return_set_key:
