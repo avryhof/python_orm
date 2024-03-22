@@ -28,7 +28,7 @@ class Field:
     db_field = None
     is_function = False
     field_type = ""
-    field_data_type = (int, str, float, datetime.date, datetime.datetime, decimal.Decimal)
+    field_data_type = None
     max_length = None
     null_field = False
     field_auto_increment = False
@@ -60,11 +60,12 @@ class Field:
         self.check_value()
 
     def check_value(self):
-        if self.value is not None and not isinstance(self.value, self.field_data_type):
-            if hasattr(self, "process_value"):
-                self.process_value()
-            else:
-                raise TypeError(f"Value {self.value}  is not of type {self.field_data_type}.")
+        if self.field_data_type is not None:
+            if self.value is not None and not isinstance(self.value, self.field_data_type):
+                if hasattr(self, "process_value"):
+                    self.process_value()
+                else:
+                    raise TypeError(f"Value {self.value}  is not of type {self.field_data_type}.")
 
     def process_value(self):
         if callable(self.field_data_type):
